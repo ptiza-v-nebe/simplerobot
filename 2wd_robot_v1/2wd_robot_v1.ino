@@ -1,19 +1,33 @@
 #include <Arduino.h>
-#include "motor_control.h"
-#include "ir_remote_handler.h"
 
-//#define DECODE_NEC
-#include <IRremote.hpp> // include the library
+#include <dc_motor_control.h>
+#include <ir_remote_handler.h>
+
+#include <NewPing.h>
+
 #define IR_RECEIVE_PIN 11
 
 
+#define TRIGGER_PIN  8  // Arduino pin tied to trigger pin on the ultrasonic sensor.
+#define ECHO_PIN     9  // Arduino pin tied to echo pin on the ultrasonic sensor.
+#define MAX_DISTANCE 400 // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.
+#define NUM_READINGS 5
+
+unsigned long previousMillis = 0;
+const long interval = 50;
+unsigned int readings[NUM_READINGS]; // Array to store distance readings
+unsigned int readIndex = 0;          // Current index in the array
+unsigned int total = 0;              // Total of readings
+unsigned int distance_average = 0;            // Average of readings
+
+NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
 
 int longtitude_speed = 0;
 int side_speed = 0;
-int general_speed = 0;
+int general_speed = 25;
 
 void myCommandHandler(uint8_t command) {
-    Serial.println("commandhandler");
+    //Serial.println("commandhandler");
     switch (command) {
         case 0x18: // Forward
             longtitude_speed = general_speed;
@@ -46,24 +60,31 @@ void myCommandHandler(uint8_t command) {
 }
 
 void myPressedHandler() {
-    Serial.println("Button pressed");
+   // do something on press
 }
 
 void myReleaseHandler() {
-    Serial.println("Button released");
+    longtitude_speed = 0;
+    side_speed = 0;
 }
 
 IRRemoteHandler irRemoteHandler;
 
 void setup() {
+  pinMode(13, OUTPUT);
   Serial.begin(115200);
   setup_motor_pins();
   //IrReceiver.begin(IR_RECEIVE_PIN);
   
   irRemoteHandler.begin(IR_RECEIVE_PIN);
-  irRemoteHandler.setCommandHandler(myCommandHandler);
-  irRemoteHandler.setReleaseHandler(myReleaseHandler);
-  irRemoteHandler.setPressedHandler(myPressedHandler);
+  irRemoteHandler.set_command_handler(myCommandHandler);
+  irRemoteHandler.set_pressed_handler(myPressedHandler);
+  irRemoteHandler.set_released_handler(myReleaseHandler);
+
+
+  for (int i = 0; i < NUM_READINGS; i++) {
+    readings[i] = 0;
+  }
 }
 
 
@@ -73,103 +94,56 @@ void set_platform_speed(int longtitude_speed, int side_speed){
 }
 
 
-//int get_speed_from_joystick(int value){
-//  int speed = 0;
-//  if(value >= 0 && value < 480) {
-//    speed = map(value, 480, 0, 0, 100);
-//  } else if (value >= 544 && value <= 1023) {
-//    speed = map(value, 544, 1023, 0, -100);
-//  } else if (value > 480 && value < 544) {
-//    speed = 0;
-//  }
-//  return speed;
-//}
 
-//int longtitude_speed = 0;
-//int side_speed = 0;
-//int general_speed = 25;
-//
-//unsigned long lastReceiveTime = 0;
-//unsigned long debounceDelay = 120; // Adjust this value as needed
-//uint32_t lastCommand = 0;
-//bool buttonPressed = false;
-//bool buttonReleased = false;
+
+// ---------------------------------------------------------------------------
+// Example NewPing library sketch that does a ping about 20 times per second.
+// ---------------------------------------------------------------------------
 
 
 void loop() {
-    irRemoteHandler.handleIR();
-    //set_platform_speed(longtitude_speed, side_speed);
+    irRemoteHandler.run_once();
+    
+    unsigned long currentMillis = millis();
 
-//  if (IrReceiver.decode()) {
-//      if (IrReceiver.decodedIRData.command == 0x18) {  //forward
-//        longtitude_speed = general_speed;
-//        side_speed = 0;
-//      } else if (IrReceiver.decodedIRData.command == 0x52) { //backward
-//        longtitude_speed = -general_speed;
-//        side_speed = 0;
-//      } else if (IrReceiver.decodedIRData.command == 0x8) { //left
-//        longtitude_speed = 0;
-//        side_speed = -general_speed;
-//      } else if (IrReceiver.decodedIRData.command == 0x5A) { //right
-//        longtitude_speed = 0;
-//        side_speed = general_speed;
-//      } 
-//
-//      
-//      if (IrReceiver.decodedIRData.command == 0x45) { //1
-//        general_speed = 25;
-//      } else if (IrReceiver.decodedIRData.command == 0x46) { //2
-//        general_speed = 50;
-//      } else if (IrReceiver.decodedIRData.command == 0x47) { //3
-//        general_speed = 100;
-//      }
-// 
-//      // Check if the received data is a repeat signal
-//      if (IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT) {
-//        // Update the last received time if it's a repeat of the last command
-//        if (IrReceiver.decodedIRData.command == lastCommand) {
-//          lastReceiveTime = millis();
-//        }
-//      } else {
-//        // New button press detected
-//        lastCommand = IrReceiver.decodedIRData.command;
-//        lastReceiveTime = millis();
-//        buttonPressed = true;
-//        //Serial.println("Button Pressed: " + String(lastCommand));
-//      }
-//      IrReceiver.resume(); // Receive the next value
-//  }
-//
-//  // Check if enough time has passed since the last signal
-//  if (buttonPressed && (millis() - lastReceiveTime > debounceDelay)) {
-//    buttonReleased = true;
-//    buttonPressed = false;
-//    //Serial.println("Button Released: " + String(lastCommand));
-//  }
-//
-//
-//  if(buttonReleased){
-//    longtitude_speed = 0;
-//    side_speed = 0;  
-//    buttonReleased = false;
-//  }
-//
-//
-//  
-//
-//  
-//  set_platform_speed(longtitude_speed, side_speed);  
+    //read distance
+    if (currentMillis - previousMillis >= interval) {
+      previousMillis = currentMillis;
+  
+      // Subtract the last reading
+      total = total - readings[readIndex];
+      // Take a new reading
+      unsigned int distance = sonar.ping_cm();
+      readings[readIndex] = distance;
+      // Add the reading to the total
+      total = total + readings[readIndex];
+      // Advance to the next position in the array
+      readIndex++;
+  
+      // If we're at the end of the array, wrap around to the beginning
+      if (readIndex >= NUM_READINGS) {
+        readIndex = 0;
+      }
+  
+      // Calculate the average
+      distance_average = total / NUM_READINGS;
+  
+//      Serial.print("Average Distance: ");
+//      Serial.print(distance_average);
+//      Serial.println(" cm");
+    }
 
-  
-//  // get forward speed
-//  int x = analogRead(A0);
-//  int y = analogRead(A1);
-//
-//  int longtitude_speed = get_speed_from_joystick(x);
-//  int side_speed = get_speed_from_joystick(y);
-//
-//  set_platform_speed(longtitude_speed, side_speed);
-  
-  //Serial.println(String("X: ") + String(analogRead(A0)) + String(", Y: ") + String(analogRead(A1)) + String(" | L: ") + String(longtitude_speed) + String(", S: ") + String(side_speed));
-  //delay(10);
+    // do something useful with distance
+    if(distance_average == 0) {
+      //do nothing
+    } else if (distance_average > 0 && distance_average < 30) {
+      longtitude_speed = 0;
+      side_speed = 0;
+    } else if (distance_average > 30) {
+      digitalWrite(13, !digitalRead(13)); // toggle led 13
+    }
+
+    //set platform speed
+    set_platform_speed(longtitude_speed, side_speed);
+
 }
