@@ -1,7 +1,7 @@
 unsigned long timer_previous_millis = 0;
 
 bool spin_timer(){
-  static const long interval = 1000;
+  const long interval = 1000;
   unsigned long current_millis = millis();
   
   if (current_millis - timer_previous_millis >= interval) {

@@ -11,13 +11,16 @@ unsigned int readIndex = 0;          // Current index in the array
 unsigned int total = 0;              // Total of readings
 unsigned int distance_average = 0;            // Average of readings
 
+
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
+
 
 void setup_measure_distance(){
   for (int i = 0; i < NUM_READINGS; i++) {
     readings[i] = 0;
   }  
 }
+
 
 int measure_distance(){
     static const long interval = 50;
